@@ -1,0 +1,115 @@
+# Auto Job Application Bot - Configuration
+# Copy this file to config.yaml and fill in your details
+
+# Email Settings (iCloud / iOS Mail via IMAP)
+email:
+  imap_server: "imap.mail.me.com"
+  imap_port: 993
+  username: "your-apple-id@icloud.com"
+  # Generate an app-specific password at https://appleid.apple.com
+  password: "your-app-specific-password"
+  mailbox: "INBOX"
+  # How many days back to scan
+  scan_days: 7
+  # Mark processed emails
+  mark_as_read: false
+
+# Your Profile
+profile:
+  first_name: "John"
+  last_name: "Doe"
+  email: "john.doe@example.com"
+  phone: "+1-555-123-4567"
+  location: "San Francisco, CA"
+  linkedin: "https://linkedin.com/in/johndoe"
+  github: "https://github.com/johndoe"
+  portfolio: "https://johndoe.dev"
+  resume_path: "./resume.pdf"
+
+  # Professional Summary
+  summary: "Senior Software Engineer with 5+ years of experience..."
+
+  # Skills (used for matching and cover letters)
+  skills:
+    - Python
+    - JavaScript
+    - React
+    - Node.js
+    - AWS
+    - Docker
+    - PostgreSQL
+
+  # Experience (years)
+  years_of_experience: 5
+
+  # Education
+  education:
+    - degree: "B.S. Computer Science"
+      school: "University of California, Berkeley"
+      year: 2019
+
+# Job Preferences
+preferences:
+  # Desired roles (keywords to match)
+  desired_roles:
+    - "Software Engineer"
+    - "Full Stack Developer"
+    - "Backend Engineer"
+    - "Python Developer"
+
+  # Locations (empty = remote ok)
+  preferred_locations:
+    - "San Francisco"
+    - "Remote"
+    - "New York"
+
+  # Salary range
+  min_salary: 120000
+  max_salary: 200000
+
+  # Job types
+  job_types:
+    - "full-time"
+    - "contract"
+
+  # Companies to skip
+  blacklist_companies:
+    - "SpamCorp"
+
+  # Keywords that must appear
+  required_keywords: []
+
+  # Keywords that disqualify
+  exclude_keywords:
+    - "unpaid"
+    - "internship"
+
+# Bot Behavior
+bot:
+  # dry_run: true = preview only, no actual applications
+  dry_run: true
+  # Maximum applications per run
+  max_applications_per_run: 10
+  # Delay between applications (seconds)
+  delay_between_applications: 30
+  # Generate cover letters
+  generate_cover_letters: true
+  # Log level: DEBUG, INFO, WARNING, ERROR
+  log_level: "INFO"
+  # Database path
+  db_path: "./job_applications.db"
+  # Schedule interval (minutes) - 0 for one-shot
+  schedule_interval: 0
+
+# AI Settings (for cover letter generation & smart parsing)
+ai:
+  # Provider: "openai" or "anthropic"
+  provider: "openai"
+  api_key: "your-api-key"
+  model: "gpt-4o"
+
+# Notifications
+notifications:
+  # Email summary after each run
+  email_summary: true
+  summary_recipient: "your-email@example.com"
