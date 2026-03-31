@@ -1,0 +1,97 @@
+{
+  "Comment": "Data Lake ETL Pipeline with Quality Checks",
+  "StartAt": "ValidateSchema",
+  "States": {
+    "ValidateSchema": {
+      "Type": "Task",
+      "Resource": "${ValidatorFunctionArn}",
+      "Parameters": {
+        "Records": [
+          {
+            "s3": {
+              "bucket": {"name.$": "$.bucket"},
+              "object": {"key.$": "$.key"}
+            }
+          }
+        ]
+      },
+      "ResultPath": "$.validation",
+      "Next": "CheckValidation"
+    },
+    "CheckValidation": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "Variable": "$.validation.body",
+          "StringMatches": "*\"valid\": true*",
+          "Next": "RunETL"
+        }
+      ],
+      "Default": "QuarantineFile"
+    },
+    "RunETL": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::glue:startJobRun.sync",
+      "Parameters": {
+        "JobName": "data-lake-etl",
+        "Arguments": {
+          "--input_path.$": "States.Format('s3://{}/{}', $.bucket, $.key)",
+          "--output_path.$": "States.Format('s3://{}/curated/{}', $.output_bucket, $.data_type)",
+          "--data_type.$": "$.data_type"
+        }
+      },
+      "ResultPath": "$.etl",
+      "Next": "RunQualityChecks"
+    },
+    "RunQualityChecks": {
+      "Type": "Task",
+      "Resource": "${QualityCheckerFunctionArn}",
+      "Parameters": {
+        "bucket.$": "$.output_bucket",
+        "key.$": "States.Format('curated/{}/part-00000.parquet', $.data_type)",
+        "data_type.$": "$.data_type"
+      },
+      "ResultPath": "$.quality",
+      "Next": "CheckQuality"
+    },
+    "CheckQuality": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "Variable": "$.quality.all_passed",
+          "BooleanEquals": true,
+          "Next": "Success"
+        }
+      ],
+      "Default": "QuarantineFile"
+    },
+    "QuarantineFile": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::s3:copyObject",
+      "Parameters": {
+        "Bucket.$": "$.bucket",
+        "Key.$": "States.Format('quarantine/{}', $.key)",
+        "CopySource.$": "States.Format('{}/{}', $.bucket, $.key)"
+      },
+      "Next": "NotifyFailure"
+    },
+    "NotifyFailure": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::sns:publish",
+      "Parameters": {
+        "TopicArn": "${SNSTopicArn}",
+        "Subject": "Data Lake: Quality Check Failed",
+        "Message.$": "States.JsonToString($.quality)"
+      },
+      "Next": "Failed"
+    },
+    "Failed": {
+      "Type": "Fail",
+      "Error": "DataQualityFailed",
+      "Cause": "Data quality checks did not pass"
+    },
+    "Success": {
+      "Type": "Succeed"
+    }
+  }
+}

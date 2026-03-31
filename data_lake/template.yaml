@@ -1,0 +1,92 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: ETL Data Lake with Automated Quality Checks
+
+Resources:
+  RawBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "data-lake-raw-${AWS::AccountId}"
+
+  CuratedBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "data-lake-curated-${AWS::AccountId}"
+
+  AlertTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: data-lake-alerts
+
+  ValidatorFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: ingestion/validator.handler
+      Runtime: python3.11
+      CodeUri: .
+      Timeout: 60
+      MemorySize: 512
+      Policies:
+        - S3ReadPolicy:
+            BucketName: !Ref RawBucket
+
+  QualityCheckerFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: quality/checks.handler
+      Runtime: python3.11
+      CodeUri: .
+      Timeout: 120
+      MemorySize: 1024
+      Environment:
+        Variables:
+          SNS_TOPIC_ARN: !Ref AlertTopic
+      Policies:
+        - S3ReadPolicy:
+            BucketName: !Ref CuratedBucket
+        - SNSPublishMessagePolicy:
+            TopicName: !GetAtt AlertTopic.TopicName
+
+  ETLJobRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: glue.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSGlueServiceRole
+      Policies:
+        - PolicyName: S3Access
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: s3:*
+                Resource:
+                  - !Sub "${RawBucket.Arn}/*"
+                  - !Sub "${CuratedBucket.Arn}/*"
+
+  DataLakeETLJob:
+    Type: AWS::Glue::Job
+    Properties:
+      Name: data-lake-etl
+      Role: !GetAtt ETLJobRole.Arn
+      Command:
+        Name: glueetl
+        ScriptLocation: !Sub "s3://${RawBucket}/scripts/transform.py"
+        PythonVersion: "3"
+      GlueVersion: "4.0"
+      NumberOfWorkers: 2
+      WorkerType: G.1X
+
+Outputs:
+  RawBucketName:
+    Value: !Ref RawBucket
+  CuratedBucketName:
+    Value: !Ref CuratedBucket
+  AlertTopicArn:
+    Value: !Ref AlertTopic

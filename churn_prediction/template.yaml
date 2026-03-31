@@ -1,0 +1,73 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Customer Churn Prediction Infrastructure
+
+Resources:
+  RawBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "churn-raw-${AWS::AccountId}"
+
+  CuratedBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "churn-curated-${AWS::AccountId}"
+
+  GlueJobRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: glue.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSGlueServiceRole
+      Policies:
+        - PolicyName: S3Access
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: s3:*
+                Resource:
+                  - !Sub "${RawBucket.Arn}/*"
+                  - !Sub "${CuratedBucket.Arn}/*"
+
+  ChurnETLJob:
+    Type: AWS::Glue::Job
+    Properties:
+      Name: churn-etl-job
+      Role: !GetAtt GlueJobRole.Arn
+      Command:
+        Name: glueetl
+        ScriptLocation: !Sub "s3://${RawBucket}/scripts/glue_etl.py"
+        PythonVersion: "3"
+      GlueVersion: "4.0"
+      NumberOfWorkers: 2
+      WorkerType: G.1X
+      DefaultArguments:
+        "--input_path": !Sub "s3://${RawBucket}/raw/"
+        "--output_path": !Sub "s3://${CuratedBucket}/curated/"
+
+  ChurnDatabase:
+    Type: AWS::Glue::Database
+    Properties:
+      CatalogId: !Ref AWS::AccountId
+      DatabaseInput:
+        Name: churn_analytics
+
+  AthenaWorkGroup:
+    Type: AWS::Athena::WorkGroup
+    Properties:
+      Name: churn-analysis
+      WorkGroupConfiguration:
+        ResultConfiguration:
+          OutputLocation: !Sub "s3://${CuratedBucket}/athena-results/"
+
+Outputs:
+  RawBucketName:
+    Value: !Ref RawBucket
+  CuratedBucketName:
+    Value: !Ref CuratedBucket

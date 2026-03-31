@@ -1,0 +1,95 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: Fraud Detection Streaming System
+
+Globals:
+  Function:
+    Timeout: 60
+    Runtime: python3.11
+    MemorySize: 512
+
+Parameters:
+  SageMakerEndpointName:
+    Type: String
+    Default: fraud-detection-endpoint
+  FraudThreshold:
+    Type: String
+    Default: "0.7"
+
+Resources:
+  TransactionStream:
+    Type: AWS::Kinesis::Stream
+    Properties:
+      Name: fraud-detection-stream
+      ShardCount: 2
+      RetentionPeriodHours: 24
+
+  FraudAlertTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: fraud-alerts
+
+  EnricherFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: enricher.handler
+      CodeUri: .
+      Environment:
+        Variables:
+          USER_PROFILES_TABLE: !Ref UserProfilesTable
+          TRANSACTIONS_TABLE: !Ref TransactionsTable
+          SAGEMAKER_ENDPOINT: !Ref SageMakerEndpointName
+          SNS_TOPIC_ARN: !Ref FraudAlertTopic
+          FRAUD_THRESHOLD: !Ref FraudThreshold
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref UserProfilesTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref TransactionsTable
+        - SNSPublishMessagePolicy:
+            TopicName: !GetAtt FraudAlertTopic.TopicName
+        - Statement:
+            - Effect: Allow
+              Action: sagemaker:InvokeEndpoint
+              Resource: !Sub "arn:aws:sagemaker:${AWS::Region}:${AWS::AccountId}:endpoint/${SageMakerEndpointName}"
+      Events:
+        KinesisEvent:
+          Type: Kinesis
+          Properties:
+            Stream: !GetAtt TransactionStream.Arn
+            StartingPosition: LATEST
+            BatchSize: 10
+
+  UserProfilesTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: fraud-user-profiles
+      AttributeDefinitions:
+        - AttributeName: customer_id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: customer_id
+          KeyType: HASH
+      BillingMode: PAY_PER_REQUEST
+
+  TransactionsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: fraud-transactions
+      AttributeDefinitions:
+        - AttributeName: customer_id
+          AttributeType: S
+        - AttributeName: timestamp
+          AttributeType: S
+      KeySchema:
+        - AttributeName: customer_id
+          KeyType: HASH
+        - AttributeName: timestamp
+          KeyType: RANGE
+      BillingMode: PAY_PER_REQUEST
+
+Outputs:
+  StreamName:
+    Value: !Ref TransactionStream
+  AlertTopicArn:
+    Value: !Ref FraudAlertTopic

@@ -1,0 +1,22 @@
+{
+  "CrawlerName": "sentiment-pipeline-crawler",
+  "Role": "arn:aws:iam::role/GlueCrawlerRole",
+  "DatabaseName": "sentiment_analytics",
+  "Targets": {
+    "S3Targets": [
+      {
+        "Path": "s3://sentiment-pipeline-data/curated/",
+        "Exclusions": ["**.tmp", "**.metadata"]
+      }
+    ]
+  },
+  "SchemaChangePolicy": {
+    "UpdateBehavior": "UPDATE_IN_DATABASE",
+    "DeleteBehavior": "LOG"
+  },
+  "RecrawlPolicy": {
+    "RecrawlBehavior": "CRAWL_NEW_FOLDERS_ONLY"
+  },
+  "Schedule": "cron(0 */6 * * ? *)",
+  "Configuration": "{\"Version\":1.0,\"Grouping\":{\"TableGroupingPolicy\":\"CombineCompatibleSchemas\"},\"CrawlerOutput\":{\"Partitions\":{\"AddOrUpdateBehavior\":\"InheritFromTable\"}}}"
+}

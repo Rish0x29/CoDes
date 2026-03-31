@@ -1,0 +1,98 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: Serverless Image Classification Service
+
+Globals:
+  Function:
+    Timeout: 30
+    Runtime: python3.11
+    MemorySize: 512
+    Environment:
+      Variables:
+        S3_BUCKET: !Ref ImageBucket
+        DYNAMODB_TABLE: !Ref ClassificationTable
+
+Resources:
+  ImageApi:
+    Type: AWS::Serverless::Api
+    Properties:
+      StageName: prod
+      BinaryMediaTypes: ["*/*"]
+      Cors:
+        AllowMethods: "'POST,GET,OPTIONS'"
+        AllowHeaders: "'Content-Type'"
+        AllowOrigin: "'*'"
+
+  ClassifyFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: handler.handler
+      CodeUri: .
+      Policies:
+        - S3CrudPolicy:
+            BucketName: !Ref ImageBucket
+        - DynamoDBCrudPolicy:
+            TableName: !Ref ClassificationTable
+        - RekognitionDetectOnlyPolicy: {}
+      Events:
+        ClassifyPost:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ImageApi
+            Path: /classify
+            Method: post
+        GetResult:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ImageApi
+            Path: /results/{id}
+            Method: get
+
+  BatchFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: batch_processor.handler
+      CodeUri: .
+      Timeout: 900
+      MemorySize: 1024
+      Policies:
+        - S3ReadPolicy:
+            BucketName: !Ref ImageBucket
+        - DynamoDBCrudPolicy:
+            TableName: !Ref ClassificationTable
+        - RekognitionDetectOnlyPolicy: {}
+
+  ImageBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "image-classifier-${AWS::AccountId}"
+      CorsConfiguration:
+        CorsRules:
+          - AllowedHeaders: ["*"]
+            AllowedMethods: [PUT, POST]
+            AllowedOrigins: ["*"]
+
+  ClassificationTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: image-classifications
+      AttributeDefinitions:
+        - AttributeName: classification_id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: classification_id
+          KeyType: HASH
+      BillingMode: PAY_PER_REQUEST
+
+  FrontendBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "image-classifier-frontend-${AWS::AccountId}"
+      WebsiteConfiguration:
+        IndexDocument: index.html
+
+Outputs:
+  ApiUrl:
+    Value: !Sub "https://${ImageApi}.execute-api.${AWS::Region}.amazonaws.com/prod"
+  FrontendUrl:
+    Value: !GetAtt FrontendBucket.WebsiteURL

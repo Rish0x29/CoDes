@@ -1,0 +1,105 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: Automated Document Data Extraction Pipeline
+
+Globals:
+  Function:
+    Timeout: 60
+    Runtime: python3.11
+    MemorySize: 512
+
+Resources:
+  UploadBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "doc-extraction-uploads-${AWS::AccountId}"
+      NotificationConfiguration:
+        EventBridgeConfiguration:
+          EventBridgeEnabled: true
+
+  ClassifierFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: classifier.handler
+      CodeUri: .
+      Policies:
+        - S3ReadPolicy:
+            BucketName: !Ref UploadBucket
+        - ComprehendBasicAccessPolicy: {}
+        - Statement:
+            - Effect: Allow
+              Action: textract:DetectDocumentText
+              Resource: "*"
+
+  ExtractorFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: extractor.handler
+      CodeUri: .
+      Timeout: 120
+      Policies:
+        - S3ReadPolicy:
+            BucketName: !Ref UploadBucket
+        - Statement:
+            - Effect: Allow
+              Action: textract:AnalyzeDocument
+              Resource: "*"
+
+  PostProcessorFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: post_processor.handler
+      CodeUri: .
+
+  QueryApiFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: query_api.handler
+      CodeUri: .
+      Environment:
+        Variables:
+          DYNAMODB_TABLE: !Ref DocumentsTable
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref DocumentsTable
+      Events:
+        GetDocument:
+          Type: Api
+          Properties:
+            Path: /documents/{id}
+            Method: get
+        ListDocuments:
+          Type: Api
+          Properties:
+            Path: /documents
+            Method: get
+
+  DocumentsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: extracted-documents
+      AttributeDefinitions:
+        - AttributeName: document_id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: document_id
+          KeyType: HASH
+      BillingMode: PAY_PER_REQUEST
+
+  ReviewQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: document-review-queue
+
+  NotificationTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: document-extraction-notifications
+
+Outputs:
+  UploadBucketName:
+    Value: !Ref UploadBucket
+  ApiUrl:
+    Value: !Sub "https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod"
+  ReviewQueueUrl:
+    Value: !Ref ReviewQueue

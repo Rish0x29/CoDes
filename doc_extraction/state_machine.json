@@ -1,0 +1,85 @@
+{
+  "Comment": "Document Extraction Pipeline",
+  "StartAt": "ClassifyDocument",
+  "States": {
+    "ClassifyDocument": {
+      "Type": "Task",
+      "Resource": "${ClassifierFunctionArn}",
+      "Parameters": {
+        "bucket.$": "$.bucket",
+        "key.$": "$.key"
+      },
+      "ResultPath": "$.classification",
+      "Next": "ExtractDocument"
+    },
+    "ExtractDocument": {
+      "Type": "Task",
+      "Resource": "${ExtractorFunctionArn}",
+      "Parameters": {
+        "bucket.$": "$.bucket",
+        "key.$": "$.key",
+        "features": ["TABLES", "FORMS"]
+      },
+      "ResultPath": "$.extraction",
+      "Next": "PostProcess"
+    },
+    "PostProcess": {
+      "Type": "Task",
+      "Resource": "${PostProcessorFunctionArn}",
+      "InputPath": "$.extraction",
+      "ResultPath": "$.processed",
+      "Next": "ConfidenceRouter"
+    },
+    "ConfidenceRouter": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "Variable": "$.processed.high_confidence",
+          "BooleanEquals": true,
+          "Next": "SaveToDatabase"
+        }
+      ],
+      "Default": "SendForReview"
+    },
+    "SaveToDatabase": {
+      "Type": "Task",
+      "Resource": "${QueryApiFunctionArn}",
+      "Parameters": {
+        "action": "save",
+        "document_id.$": "$.key",
+        "extraction_result.$": "$.processed",
+        "status": "completed"
+      },
+      "Next": "NotifySuccess"
+    },
+    "SendForReview": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::sqs:sendMessage",
+      "Parameters": {
+        "QueueUrl": "${ReviewQueueUrl}",
+        "MessageBody.$": "States.JsonToString($.processed)"
+      },
+      "Next": "NotifyReview"
+    },
+    "NotifySuccess": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::sns:publish",
+      "Parameters": {
+        "TopicArn": "${NotificationTopicArn}",
+        "Subject": "Document Processed Successfully",
+        "Message.$": "States.Format('Document {} extracted with confidence {}%', $.key, $.processed.overall_confidence)"
+      },
+      "End": true
+    },
+    "NotifyReview": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::sns:publish",
+      "Parameters": {
+        "TopicArn": "${NotificationTopicArn}",
+        "Subject": "Document Needs Review",
+        "Message.$": "States.Format('Document {} has low confidence ({}%) and requires review', $.key, $.processed.overall_confidence)"
+      },
+      "End": true
+    }
+  }
+}

@@ -1,0 +1,56 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: Credit Risk Scoring API
+
+Parameters:
+  SageMakerEndpointName:
+    Type: String
+    Default: credit-risk-endpoint
+  ModelDataUrl:
+    Type: String
+    Description: S3 URI to model.tar.gz
+
+Resources:
+  CreditRiskApi:
+    Type: AWS::Serverless::Api
+    Properties:
+      StageName: prod
+      Cors:
+        AllowMethods: "'POST,OPTIONS'"
+        AllowHeaders: "'Content-Type'"
+        AllowOrigin: "'*'"
+
+  ScoringFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: api_handler.handler
+      Runtime: python3.11
+      Timeout: 30
+      MemorySize: 256
+      CodeUri: .
+      Environment:
+        Variables:
+          SAGEMAKER_ENDPOINT: !Ref SageMakerEndpointName
+      Policies:
+        - Statement:
+            - Effect: Allow
+              Action: sagemaker:InvokeEndpoint
+              Resource: !Sub "arn:aws:sagemaker:${AWS::Region}:${AWS::AccountId}:endpoint/${SageMakerEndpointName}"
+      Events:
+        ScoreApi:
+          Type: Api
+          Properties:
+            RestApiId: !Ref CreditRiskApi
+            Path: /score
+            Method: post
+
+  DataBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "credit-risk-data-${AWS::AccountId}"
+
+Outputs:
+  ApiUrl:
+    Value: !Sub "https://${CreditRiskApi}.execute-api.${AWS::Region}.amazonaws.com/prod/score"
+  DataBucketName:
+    Value: !Ref DataBucket

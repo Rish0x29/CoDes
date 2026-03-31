@@ -1,0 +1,141 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: Real-Time Sentiment Analysis Pipeline
+
+Globals:
+  Function:
+    Timeout: 120
+    Runtime: python3.11
+    MemorySize: 512
+
+Resources:
+  SentimentStream:
+    Type: AWS::Kinesis::Stream
+    Properties:
+      Name: sentiment-pipeline-stream
+      ShardCount: 1
+      RetentionPeriodHours: 24
+
+  SentimentBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "sentiment-pipeline-data-${AWS::AccountId}"
+      LifecycleConfiguration:
+        Rules:
+          - Id: ArchiveOldData
+            Status: Enabled
+            Transitions:
+              - StorageClass: GLACIER
+                TransitionInDays: 90
+
+  FirehoseDeliveryStream:
+    Type: AWS::KinesisFirehose::DeliveryStream
+    Properties:
+      DeliveryStreamName: sentiment-pipeline-firehose
+      DeliveryStreamType: DirectPut
+      S3DestinationConfiguration:
+        BucketARN: !GetAtt SentimentBucket.Arn
+        Prefix: "curated/year=!{timestamp:yyyy}/month=!{timestamp:MM}/day=!{timestamp:dd}/"
+        ErrorOutputPrefix: "errors/"
+        BufferingHints:
+          IntervalInSeconds: 60
+          SizeInMBs: 5
+        CompressionFormat: GZIP
+        RoleARN: !GetAtt FirehoseRole.Arn
+
+  SentimentProcessorFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: processor.handler
+      CodeUri: .
+      Description: Processes Kinesis records with AWS Comprehend
+      Environment:
+        Variables:
+          FIREHOSE_STREAM: !Ref FirehoseDeliveryStream
+      Policies:
+        - ComprehendBasicAccessPolicy: {}
+        - FirehoseWritePolicy:
+            DeliveryStreamName: !Ref FirehoseDeliveryStream
+        - KinesisStreamReadPolicy:
+            StreamName: !Ref SentimentStream
+      Events:
+        KinesisEvent:
+          Type: Kinesis
+          Properties:
+            Stream: !GetAtt SentimentStream.Arn
+            StartingPosition: LATEST
+            BatchSize: 25
+            MaximumBatchingWindowInSeconds: 5
+
+  FirehoseRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: firehose.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: FirehoseS3Access
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:PutObject
+                  - s3:GetObject
+                  - s3:ListBucket
+                Resource:
+                  - !GetAtt SentimentBucket.Arn
+                  - !Sub "${SentimentBucket.Arn}/*"
+
+  GlueCrawlerRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: glue.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSGlueServiceRole
+      Policies:
+        - PolicyName: GlueS3Access
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: s3:GetObject
+                Resource: !Sub "${SentimentBucket.Arn}/*"
+
+  SentimentDatabase:
+    Type: AWS::Glue::Database
+    Properties:
+      CatalogId: !Ref AWS::AccountId
+      DatabaseInput:
+        Name: sentiment_analytics
+        Description: Sentiment analysis data catalog
+
+  SentimentCrawler:
+    Type: AWS::Glue::Crawler
+    Properties:
+      Name: sentiment-pipeline-crawler
+      Role: !GetAtt GlueCrawlerRole.Arn
+      DatabaseName: !Ref SentimentDatabase
+      Targets:
+        S3Targets:
+          - Path: !Sub "s3://${SentimentBucket}/curated/"
+      Schedule:
+        ScheduleExpression: cron(0 */6 * * ? *)
+
+Outputs:
+  StreamName:
+    Value: !Ref SentimentStream
+  BucketName:
+    Value: !Ref SentimentBucket
+  ProcessorFunctionArn:
+    Value: !GetAtt SentimentProcessorFunction.Arn

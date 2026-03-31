@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Image Classification Service</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0f172a; color: #e2e8f0; min-height: 100vh; }
+        .container { max-width: 900px; margin: 0 auto; padding: 2rem; }
+        h1 { text-align: center; font-size: 2rem; margin-bottom: 0.5rem; background: linear-gradient(135deg, #60a5fa, #a78bfa); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+        .subtitle { text-align: center; color: #94a3b8; margin-bottom: 2rem; }
+        .config { margin-bottom: 1rem; }
+        .config label { font-size: 0.85rem; color: #94a3b8; }
+        .config input { background: #1e293b; border: 1px solid #334155; color: #e2e8f0; padding: 0.5rem; border-radius: 6px; width: 100%; margin-top: 0.25rem; }
+        .drop-zone { border: 2px dashed #334155; border-radius: 12px; padding: 3rem; text-align: center; cursor: pointer; transition: all 0.3s; background: #1e293b; }
+        .drop-zone:hover, .drop-zone.active { border-color: #60a5fa; background: #1e293b; }
+        .drop-zone p { color: #94a3b8; margin-bottom: 1rem; }
+        .drop-zone .icon { font-size: 3rem; margin-bottom: 1rem; }
+        .preview { margin: 1.5rem 0; text-align: center; }
+        .preview img { max-width: 100%; max-height: 400px; border-radius: 8px; border: 1px solid #334155; }
+        .btn { display: inline-block; padding: 0.75rem 2rem; background: linear-gradient(135deg, #3b82f6, #8b5cf6); color: white; border: none; border-radius: 8px; font-size: 1rem; cursor: pointer; transition: opacity 0.3s; }
+        .btn:hover { opacity: 0.9; }
+        .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+        .results { margin-top: 2rem; }
+        .section { background: #1e293b; border-radius: 12px; padding: 1.5rem; margin-bottom: 1rem; border: 1px solid #334155; }
+        .section h3 { color: #60a5fa; margin-bottom: 1rem; font-size: 1.1rem; }
+        .label-item { display: flex; justify-content: space-between; align-items: center; padding: 0.5rem 0; border-bottom: 1px solid #334155; }
+        .label-item:last-child { border-bottom: none; }
+        .label-name { font-weight: 500; }
+        .label-bar { display: flex; align-items: center; gap: 0.5rem; }
+        .bar { height: 8px; border-radius: 4px; background: linear-gradient(90deg, #3b82f6, #8b5cf6); transition: width 0.5s; }
+        .bar-bg { width: 120px; height: 8px; background: #334155; border-radius: 4px; overflow: hidden; }
+        .confidence { font-size: 0.85rem; color: #94a3b8; min-width: 50px; text-align: right; }
+        .face-card { background: #0f172a; border-radius: 8px; padding: 1rem; margin-bottom: 0.5rem; }
+        .face-detail { display: flex; justify-content: space-between; padding: 0.25rem 0; font-size: 0.9rem; }
+        .badge { display: inline-block; padding: 0.2rem 0.6rem; border-radius: 12px; font-size: 0.75rem; font-weight: 600; }
+        .badge-safe { background: #064e3b; color: #34d399; }
+        .badge-unsafe { background: #7f1d1d; color: #fca5a5; }
+        .loading { display: none; text-align: center; padding: 2rem; }
+        .spinner { width: 40px; height: 40px; border: 3px solid #334155; border-top-color: #60a5fa; border-radius: 50%; animation: spin 0.8s linear infinite; margin: 0 auto 1rem; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .error { background: #7f1d1d; border: 1px solid #991b1b; border-radius: 8px; padding: 1rem; color: #fca5a5; margin-top: 1rem; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Image Classification</h1>
+        <p class="subtitle">Powered by AWS Rekognition</p>
+
+        <div class="config">
+            <label>API Endpoint URL</label>
+            <input type="text" id="apiUrl" placeholder="https://your-api-id.execute-api.region.amazonaws.com/prod">
+        </div>
+
+        <div class="drop-zone" id="dropZone">
+            <div class="icon">&#128247;</div>
+            <p>Drag & drop an image here, or click to browse</p>
+            <input type="file" id="fileInput" accept="image/*" style="display:none">
+        </div>
+
+        <div class="preview" id="preview" style="display:none">
+            <img id="previewImg" src="" alt="Preview">
+        </div>
+
+        <div style="text-align:center; margin-top:1rem;">
+            <button class="btn" id="classifyBtn" disabled>Classify Image</button>
+        </div>
+
+        <div class="loading" id="loading">
+            <div class="spinner"></div>
+            <p>Analyzing image...</p>
+        </div>
+
+        <div class="results" id="results" style="display:none">
+            <div class="section">
+                <h3>Safety Check</h3>
+                <div id="safetyResult"></div>
+            </div>
+            <div class="section">
+                <h3>Labels</h3>
+                <div id="labelsResult"></div>
+            </div>
+            <div class="section" id="facesSection" style="display:none">
+                <h3>Faces Detected</h3>
+                <div id="facesResult"></div>
+            </div>
+        </div>
+
+        <div class="error" id="error" style="display:none"></div>
+    </div>
+
+    <script>
+        const dropZone = document.getElementById('dropZone');
+        const fileInput = document.getElementById('fileInput');
+        const preview = document.getElementById('preview');
+        const previewImg = document.getElementById('previewImg');
+        const classifyBtn = document.getElementById('classifyBtn');
+        const loading = document.getElementById('loading');
+        const results = document.getElementById('results');
+        const errorDiv = document.getElementById('error');
+
+        let selectedFile = null;
+
+        dropZone.addEventListener('click', () => fileInput.click());
+        dropZone.addEventListener('dragover', (e) => { e.preventDefault(); dropZone.classList.add('active'); });
+        dropZone.addEventListener('dragleave', () => dropZone.classList.remove('active'));
+        dropZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            dropZone.classList.remove('active');
+            if (e.dataTransfer.files.length) handleFile(e.dataTransfer.files[0]);
+        });
+        fileInput.addEventListener('change', (e) => { if (e.target.files.length) handleFile(e.target.files[0]); });
+
+        function handleFile(file) {
+            if (!file.type.startsWith('image/')) { showError('Please select an image file'); return; }
+            if (file.size > 5 * 1024 * 1024) { showError('Image must be under 5MB'); return; }
+            selectedFile = file;
+            const reader = new FileReader();
+            reader.onload = (e) => { previewImg.src = e.target.result; preview.style.display = 'block'; };
+            reader.readAsDataURL(file);
+            classifyBtn.disabled = false;
+            results.style.display = 'none';
+            errorDiv.style.display = 'none';
+        }
+
+        classifyBtn.addEventListener('click', async () => {
+            const apiUrl = document.getElementById('apiUrl').value.replace(/\/$/, '');
+            if (!apiUrl) { showError('Please enter the API endpoint URL'); return; }
+            if (!selectedFile) return;
+
+            classifyBtn.disabled = true;
+            loading.style.display = 'block';
+            results.style.display = 'none';
+            errorDiv.style.display = 'none';
+
+            try {
+                const base64 = await fileToBase64(selectedFile);
+                const response = await fetch(`${apiUrl}/classify`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ image_base64: base64 }),
+                });
+                const data = await response.json();
+                if (!response.ok) throw new Error(data.error || 'Classification failed');
+                displayResults(data);
+            } catch (err) {
+                showError(err.message);
+            } finally {
+                loading.style.display = 'none';
+                classifyBtn.disabled = false;
+            }
+        });
+
+        function fileToBase64(file) {
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = () => resolve(reader.result.split(',')[1]);
+                reader.onerror = reject;
+                reader.readAsDataURL(file);
+            });
+        }
+
+        function displayResults(data) {
+            // Safety
+            const safetyDiv = document.getElementById('safetyResult');
+            if (data.is_safe) {
+                safetyDiv.innerHTML = '<span class="badge badge-safe">SAFE</span> No moderation issues detected';
+            } else {
+                const mods = data.moderation_labels.map(m => `${m.name} (${m.confidence}%)`).join(', ');
+                safetyDiv.innerHTML = `<span class="badge badge-unsafe">FLAGGED</span> ${mods}`;
+            }
+
+            // Labels
+            const labelsDiv = document.getElementById('labelsResult');
+            labelsDiv.innerHTML = data.labels.slice(0, 15).map(label => `
+                <div class="label-item">
+                    <span class="label-name">${label.name}</span>
+                    <div class="label-bar">
+                        <div class="bar-bg"><div class="bar" style="width:${label.confidence}%"></div></div>
+                        <span class="confidence">${label.confidence}%</span>
+                    </div>
+                </div>
+            `).join('');
+
+            // Faces
+            const facesSection = document.getElementById('facesSection');
+            const facesDiv = document.getElementById('facesResult');
+            if (data.faces && data.faces.length > 0) {
+                facesSection.style.display = 'block';
+                facesDiv.innerHTML = data.faces.map((face, i) => `
+                    <div class="face-card">
+                        <div class="face-detail"><span>Face ${i + 1}</span><span>${face.confidence}% confidence</span></div>
+                        <div class="face-detail"><span>Age</span><span>${face.age_range.Low || '?'} - ${face.age_range.High || '?'}</span></div>
+                        <div class="face-detail"><span>Gender</span><span>${face.gender.Value || 'Unknown'} (${(face.gender.Confidence || 0).toFixed(1)}%)</span></div>
+                        <div class="face-detail"><span>Top Emotion</span><span>${face.emotions[0]?.type || 'Unknown'} (${(face.emotions[0]?.confidence || 0).toFixed(1)}%)</span></div>
+                        <div class="face-detail"><span>Smile</span><span>${face.smile.Value ? 'Yes' : 'No'}</span></div>
+                    </div>
+                `).join('');
+            } else {
+                facesSection.style.display = 'none';
+            }
+
+            results.style.display = 'block';
+        }
+
+        function showError(msg) { errorDiv.textContent = msg; errorDiv.style.display = 'block'; }
+    </script>
+</body>
+</html>

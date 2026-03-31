@@ -1,0 +1,74 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: Conversational AI Financial Advisor Chatbot
+
+Parameters:
+  BedrockModelId:
+    Type: String
+    Default: anthropic.claude-3-sonnet-20240229-v1:0
+
+Resources:
+  ChatApi:
+    Type: AWS::Serverless::Api
+    Properties:
+      StageName: prod
+      Cors:
+        AllowMethods: "'POST,OPTIONS'"
+        AllowHeaders: "'Content-Type'"
+        AllowOrigin: "'*'"
+
+  ChatFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: chat_handler.handler
+      Runtime: python3.11
+      CodeUri: .
+      Timeout: 90
+      MemorySize: 512
+      Environment:
+        Variables:
+          BEDROCK_MODEL_ID: !Ref BedrockModelId
+          HISTORY_TABLE: !Ref ConversationTable
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref ConversationTable
+        - Statement:
+            - Effect: Allow
+              Action:
+                - bedrock:InvokeModel
+              Resource: "*"
+      Events:
+        ChatPost:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ChatApi
+            Path: /chat
+            Method: post
+
+  ConversationTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: chatbot-conversations
+      AttributeDefinitions:
+        - AttributeName: conversation_id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: conversation_id
+          KeyType: HASH
+      BillingMode: PAY_PER_REQUEST
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+
+  FrontendBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "financial-chatbot-${AWS::AccountId}"
+      WebsiteConfiguration:
+        IndexDocument: index.html
+
+Outputs:
+  ApiUrl:
+    Value: !Sub "https://${ChatApi}.execute-api.${AWS::Region}.amazonaws.com/prod"
+  FrontendUrl:
+    Value: !GetAtt FrontendBucket.WebsiteURL
