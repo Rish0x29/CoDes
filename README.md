@@ -1,55 +1,166 @@
-# Auto Job Application Bot
+# defi-toolkit
 
-A Python bot that scans your iOS Mail (iCloud IMAP) for job opportunity emails and automatically applies to matching positions.
+Three-part DeFi operations system: flash loan arb scanner, LVR tracker, and unified dashboard.
 
-## Features
-
-- **Email Scanning** — Connects to iCloud/iOS Mail via IMAP, fetches and parses job emails
-- **Smart Classification** — Scores emails using keyword matching and sender analysis to identify job opportunities
-- **Job Extraction** — Pulls structured data: title, company, location, salary, requirements, application URL
-- **Preference Filtering** — Matches jobs against your desired roles, locations, salary, and blacklists
-- **Auto-Application** — Fills out web forms using Playwright browser automation
-- **Cover Letters** — Generates tailored cover letters via AI (OpenAI/Anthropic) or templates
-- **Application Tracking** — SQLite database tracks all applications and prevents duplicates
-- **Notifications** — Email summaries after each run
-
-## Quick Start
-
-```bash
-# Install dependencies
-pip install -r requirements.txt
-playwright install chromium
-
-# Configure
-cp config.example.yaml config.yaml
-# Edit config.yaml with your iCloud credentials, profile, and preferences
-
-# Run in dry-run mode (default — no actual applications)
-python run.py
-
-# Scan emails only
-python run.py --scan-only
-
-# View tracked applications
-python run.py --list
-
-# View statistics
-python run.py --stats
+```
+defi-toolkit/
+├── contracts/
+│   └── FlashLoanArbitrage.sol   # Aave V3 flash loan → multi-DEX arb executor
+├── lvr_tracker/
+│   └── lvr_tracker.py           # Uniswap V3 LP vs buy-and-hold backtester
+├── arb_scanner/
+│   ├── arb_scanner.go           # Go daemon: polls DEX prices, finds gaps, WS broadcast
+│   └── go.mod
+└── dashboard/
+    └── index.html               # Unified ops dashboard (open in browser)
 ```
 
-## Setup
+---
 
-1. **iCloud App-Specific Password**: Go to [appleid.apple.com](https://appleid.apple.com) → Sign-In and Security → App-Specific Passwords → Generate one for this bot
-2. **Fill `config.yaml`**: Your profile, skills, job preferences, and email credentials
-3. **Resume**: Place your resume PDF at the path specified in config
+## 1. Flash Loan Arbitrage Contract
 
-## Architecture
+**Stack:** Solidity 0.8.20, Aave V3, Uniswap V3, SushiSwap, Curve, Balancer V2
 
-See [PROMPT.md](PROMPT.md) for full architecture documentation and extension guide.
+### Deploy (Foundry)
+```bash
+cd contracts
+forge install OpenZeppelin/openzeppelin-contracts
 
-## Safety
+forge create \
+  --rpc-url $RPC_URL \
+  --constructor-args \
+    0x87870Bca3F3fD6335C3F4ce8392D69350B4fA4E2 \
+    0x68b3465833fb72A70ecDF485E0e4C7bD8665Fc45 \
+    0xd9e1cE17f2641f24aE83637ab66a2cca9C378B9F \
+    0xBA12222222228d8Ba445958a75a0704d566BF2C8 \
+  --private-key $PRIVATE_KEY \
+  FlashLoanArbitrage.sol:FlashLoanArbitrage
+```
 
-- **Dry run by default** — Set `bot.dry_run: false` to enable real applications
-- **No auto-submit** — Browser pauses for your review before submission
-- **Deduplication** — Never applies to the same job twice
-- **Secrets** — Use environment variables (`JOB_BOT_EMAIL_PASSWORD`, `JOB_BOT_AI_API_KEY`) instead of config file
+### Approve tokens before first use
+```solidity
+contract.setTokenApproval(WETH_ADDR, true);
+contract.setTokenApproval(USDC_ADDR, true);
+```
+
+### Execute an arb (ethers.js)
+```js
+const params = {
+  route: [{
+    dex: 0,                          // UNISWAP_V3
+    tokenIn: WETH, tokenOut: USDC,
+    uniV3Fee: 500,
+    uniV3Path: '0x',
+    sushiPath: [], curvePool: ZeroAddr, curveI: 0, curveJ: 0,
+    balancerPoolId: ZeroBytes32
+  }],
+  minProfit: ethers.parseUnits('50', 6),  // $50 USDC minimum
+  deadline: Math.floor(Date.now()/1000) + 60
+};
+
+await contract.executeArbitrage(USDC_ADDR, parseUnits('500000', 6), params);
+```
+
+---
+
+## 2. LVR Tracker (Python)
+
+**Stack:** Python 3.11+, numpy, pandas, matplotlib
+
+### Install
+```bash
+cd lvr_tracker
+pip install numpy pandas matplotlib requests python-dotenv tqdm
+```
+
+### Run
+```bash
+# Synthetic GBM data (no API key needed)
+python lvr_tracker.py --synthetic --capital 10000 --lower 1600 --upper 2800
+
+# Live Uniswap V3 Subgraph data
+python lvr_tracker.py --pool ETH/USDC --start 2024-01-01 --end 2024-06-30
+
+# Your own CSV (columns: date, price, [volumeUSD])
+python lvr_tracker.py --csv mydata.csv --lower 55000 --upper 75000 --entry 65000
+```
+
+### Output
+- Console: full P&L breakdown (fees, IL, LVR, net alpha, APR)
+- `lvr_report.png`: 6-panel dark-mode dashboard
+
+### Key formulas implemented
+| Metric | Formula |
+|--------|---------|
+| IL (V3) | `2√(p/p₀)/(1+p/p₀) - 1 × inRangeFraction` |
+| LVR | `½ · σ² · γ(p) · V · dt` per tick |
+| γ(p) | `1 / (2√p · (√Pb − √Pa))` |
+| Fee income | `vol × feeBps × (LP_liq/TVL) × inRangeDays` |
+
+---
+
+## 3. Arb Scanner (Go)
+
+**Stack:** Go 1.21, go-ethereum, gorilla/websocket
+
+### Install & run
+```bash
+cd arb_scanner
+go mod tidy
+go run arb_scanner.go --rpc wss://mainnet.infura.io/ws/v3/YOUR_KEY --min-profit 50
+```
+
+### CLI flags
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--rpc` | $RPC_URL | Ethereum WebSocket RPC |
+| `--min-profit` | 50 | Minimum net profit in USD |
+| `--gas-gwei` | 30 | Assumed gas price |
+| `--eth-price` | 2400 | ETH price for gas cost calc |
+| `--port` | 8765 | WebSocket server port |
+| `--exec` | false | Auto-execute profitable opps |
+
+### WebSocket output
+Connect to `ws://localhost:8765/ws` to receive real-time JSON:
+```json
+{ "type": "opportunity", "data": {
+    "pair": "WETH/USDC",
+    "buyDex": "SushiSwap", "sellDex": "Uniswap V3",
+    "gapPct": 0.75,
+    "netProfitUSD": 2848.5,
+    "profitable": true,
+    "routeSteps": [...]
+}}
+```
+
+### HTTP endpoints
+- `GET /stats` — scanner statistics JSON
+- `GET /health` — `{"status":"ok"}`
+- `WS  /ws` — live opportunity stream
+
+---
+
+## 4. Dashboard
+
+Open `dashboard/index.html` in any browser. In production, connect it to the Go scanner's WebSocket:
+
+```js
+// In dashboard/index.html, replace simulated data with:
+const ws = new WebSocket('ws://localhost:8765/ws');
+ws.onmessage = (e) => {
+  const msg = JSON.parse(e.data);
+  if (msg.type === 'opportunity') updateOppTable(msg.data);
+  if (msg.type === 'stats') updateStats(msg.data);
+};
+```
+
+---
+
+## Security checklist
+
+- [ ] Audit contract with Slither / Aderyn before mainnet
+- [ ] Test on Tenderly fork with realistic amounts
+- [ ] Set conservative `minProfit` (≥ 2× typical gas cost)
+- [ ] Use private mempool (Flashbots) to avoid front-running
+- [ ] Monitor for oracle manipulation (use TWAP, not spot)
+- [ ] Keep `PRIVATE_KEY` in `.env`, never commit

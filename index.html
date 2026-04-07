@@ -1,0 +1,873 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DeFi Ops Center</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Syne:wght@400;700;800&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<style>
+  :root {
+    --bg:       #080c10;
+    --surface:  #0d1117;
+    --card:     #111820;
+    --border:   #1e2d3d;
+    --accent:   #00e5a0;
+    --red:      #ff4d6a;
+    --amber:    #ffb800;
+    --blue:     #4d9fff;
+    --muted:    #4a6070;
+    --text:     #c9d1d9;
+    --text2:    #8b949e;
+    --mono:     'IBM Plex Mono', monospace;
+    --display:  'Syne', sans-serif;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--mono);
+    font-size: 13px;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* ── Grid scanlines background ── */
+  body::before {
+    content: '';
+    position: fixed; inset: 0;
+    background-image:
+      linear-gradient(rgba(0,229,160,0.02) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(0,229,160,0.02) 1px, transparent 1px);
+    background-size: 40px 40px;
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  .shell {
+    position: relative;
+    z-index: 1;
+    display: grid;
+    grid-template-rows: 56px 1fr;
+    min-height: 100vh;
+  }
+
+  /* ── Nav ── */
+  nav {
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    padding: 0 28px;
+    border-bottom: 1px solid var(--border);
+    background: rgba(8,12,16,0.95);
+    backdrop-filter: blur(8px);
+    position: sticky; top: 0; z-index: 100;
+  }
+
+  .logo {
+    font-family: var(--display);
+    font-weight: 800;
+    font-size: 16px;
+    color: var(--accent);
+    letter-spacing: -0.02em;
+    white-space: nowrap;
+  }
+
+  .logo span { color: var(--text2); font-weight: 400; }
+
+  .nav-tabs { display: flex; gap: 4px; margin-left: 8px; }
+
+  .nav-tab {
+    padding: 6px 14px;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    background: none;
+    color: var(--text2);
+    font-family: var(--mono);
+    font-size: 12px;
+    cursor: pointer;
+    transition: all 0.15s;
+    white-space: nowrap;
+  }
+  .nav-tab:hover { color: var(--text); border-color: var(--border); }
+  .nav-tab.active { color: var(--accent); border-color: var(--accent); background: rgba(0,229,160,0.06); }
+
+  .nav-right { margin-left: auto; display: flex; align-items: center; gap: 16px; }
+
+  .live-badge {
+    display: flex; align-items: center; gap: 6px;
+    font-size: 11px; color: var(--accent);
+  }
+  .live-dot {
+    width: 6px; height: 6px; border-radius: 50%;
+    background: var(--accent);
+    animation: blink 1.4s ease-in-out infinite;
+  }
+  @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.2} }
+
+  .block-counter { font-size: 11px; color: var(--muted); }
+
+  /* ── Layout ── */
+  .content { padding: 20px 24px; }
+
+  /* ── Tabs ── */
+  .tab-panel { display: none; }
+  .tab-panel.active { display: block; }
+
+  /* ── Stat Strip ── */
+  .stat-strip {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 12px;
+    margin-bottom: 20px;
+  }
+
+  .stat-card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 14px 16px;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .stat-card::before {
+    content: '';
+    position: absolute; top: 0; left: 0; right: 0; height: 2px;
+    background: var(--accent-color, var(--accent));
+    opacity: 0.6;
+  }
+
+  .stat-label { font-size: 10px; color: var(--text2); text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 6px; }
+  .stat-val { font-size: 22px; font-weight: 500; font-family: var(--display); color: var(--accent-color, var(--accent)); }
+  .stat-sub { font-size: 10px; color: var(--muted); margin-top: 3px; }
+
+  /* ── 2-col layout ── */
+  .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px; }
+  .three-col { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; margin-bottom: 16px; }
+  .full-col { margin-bottom: 16px; }
+
+  /* ── Panel ── */
+  .panel {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    overflow: hidden;
+  }
+
+  .panel-head {
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; gap: 8px;
+    font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em;
+    color: var(--text2);
+  }
+
+  .panel-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); }
+  .panel-body { padding: 16px; }
+
+  /* ── Chart container ── */
+  .chart-wrap { position: relative; }
+
+  /* ── Opportunity table ── */
+  .opp-table { width: 100%; border-collapse: collapse; }
+  .opp-table th {
+    font-size: 10px; text-transform: uppercase; letter-spacing: 0.08em;
+    color: var(--muted); text-align: left; padding: 8px 12px;
+    border-bottom: 1px solid var(--border);
+  }
+  .opp-table td { padding: 9px 12px; border-bottom: 1px solid rgba(30,45,61,0.5); font-size: 12px; }
+  .opp-table tr:last-child td { border-bottom: none; }
+  .opp-table tr:hover td { background: rgba(255,255,255,0.02); }
+
+  .tag {
+    display: inline-block;
+    padding: 2px 7px; border-radius: 99px;
+    font-size: 10px; font-weight: 500;
+  }
+  .tag-green { background: rgba(0,229,160,0.12); color: var(--accent); border: 1px solid rgba(0,229,160,0.25); }
+  .tag-red   { background: rgba(255,77,106,0.12); color: var(--red);    border: 1px solid rgba(255,77,106,0.25); }
+  .tag-amber { background: rgba(255,184,0,0.12);  color: var(--amber);  border: 1px solid rgba(255,184,0,0.25); }
+  .tag-blue  { background: rgba(77,159,255,0.12); color: var(--blue);   border: 1px solid rgba(77,159,255,0.25); }
+
+  .profit-pos { color: var(--accent); }
+  .profit-neg { color: var(--red); }
+  .muted      { color: var(--muted); }
+
+  /* ── Terminal log ── */
+  .terminal {
+    background: #050810;
+    border-radius: 6px;
+    padding: 12px;
+    font-size: 11px;
+    color: var(--text2);
+    height: 180px;
+    overflow-y: auto;
+    line-height: 1.8;
+  }
+  .terminal::-webkit-scrollbar { width: 4px; }
+  .terminal::-webkit-scrollbar-track { background: transparent; }
+  .terminal::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+  .log-line { display: flex; gap: 10px; }
+  .log-ts { color: var(--muted); min-width: 80px; }
+  .log-green { color: var(--accent); }
+  .log-red { color: var(--red); }
+  .log-amber { color: var(--amber); }
+  .log-blue { color: var(--blue); }
+
+  /* ── Sliders ── */
+  .ctrl-row { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+  .ctrl-label { font-size: 11px; color: var(--text2); min-width: 120px; }
+  .ctrl-val { font-size: 11px; color: var(--accent); min-width: 70px; text-align: right; }
+
+  input[type=range] {
+    flex: 1;
+    -webkit-appearance: none;
+    height: 3px;
+    background: var(--border);
+    border-radius: 99px;
+    outline: none;
+  }
+  input[type=range]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 14px; height: 14px;
+    border-radius: 50%;
+    background: var(--accent);
+    cursor: pointer;
+    box-shadow: 0 0 6px rgba(0,229,160,0.5);
+  }
+
+  /* ── Position selector ── */
+  .pool-pills { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
+  .pool-pill {
+    padding: 5px 12px; border-radius: 99px;
+    border: 1px solid var(--border);
+    background: none; color: var(--text2);
+    font-family: var(--mono); font-size: 11px;
+    cursor: pointer; transition: all 0.12s;
+  }
+  .pool-pill:hover { border-color: var(--accent); color: var(--accent); }
+  .pool-pill.active { background: rgba(0,229,160,0.1); border-color: var(--accent); color: var(--accent); }
+
+  /* ── Flow steps ── */
+  .flow-step { display: flex; gap: 10px; padding: 8px 0; border-bottom: 1px solid rgba(30,45,61,0.5); }
+  .flow-step:last-child { border-bottom: none; }
+  .step-num {
+    width: 22px; height: 22px; border-radius: 50%;
+    border: 1px solid var(--border);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 10px; color: var(--muted); flex-shrink: 0;
+  }
+  .step-txt { font-size: 11px; color: var(--text2); line-height: 1.5; }
+
+  /* ── Verdict box ── */
+  .verdict {
+    padding: 12px 16px;
+    border-radius: 8px;
+    margin-top: 12px;
+    font-size: 12px;
+    border: 1px solid;
+  }
+  .verdict.green { background: rgba(0,229,160,0.07); border-color: rgba(0,229,160,0.25); color: var(--accent); }
+  .verdict.red   { background: rgba(255,77,106,0.07); border-color: rgba(255,77,106,0.25); color: var(--red); }
+</style>
+</head>
+<body>
+<div class="shell">
+
+<!-- ── Nav ── -->
+<nav>
+  <div class="logo">DEFI<span>/</span>OPS</div>
+  <div class="nav-tabs">
+    <button class="nav-tab active" onclick="showTab('scanner')">// arb scanner</button>
+    <button class="nav-tab" onclick="showTab('lvr')">// LVR tracker</button>
+    <button class="nav-tab" onclick="showTab('contract')">// contract</button>
+  </div>
+  <div class="nav-right">
+    <div class="live-badge"><div class="live-dot"></div>SCANNING</div>
+    <div class="block-counter">block #<span id="blockNum">21,847,203</span></div>
+  </div>
+</nav>
+
+<div class="content">
+
+<!-- ══════════════════════════════════════════════════════ -->
+<!-- TAB 1: ARB SCANNER -->
+<!-- ══════════════════════════════════════════════════════ -->
+<div class="tab-panel active" id="tab-scanner">
+
+  <div class="stat-strip">
+    <div class="stat-card" style="--accent-color: var(--accent)">
+      <div class="stat-label">Blocks scanned</div>
+      <div class="stat-val" id="sc-blocks">0</div>
+      <div class="stat-sub">this session</div>
+    </div>
+    <div class="stat-card" style="--accent-color: var(--blue)">
+      <div class="stat-label">Gaps detected</div>
+      <div class="stat-val" id="sc-gaps">0</div>
+      <div class="stat-sub">across all pairs</div>
+    </div>
+    <div class="stat-card" style="--accent-color: var(--amber)">
+      <div class="stat-label">Profitable opps</div>
+      <div class="stat-val" id="sc-profitable">0</div>
+      <div class="stat-sub">net > $50</div>
+    </div>
+    <div class="stat-card" style="--accent-color: var(--accent)">
+      <div class="stat-label">Potential profit</div>
+      <div class="stat-val" id="sc-profit">$0</div>
+      <div class="stat-sub">if all executed</div>
+    </div>
+    <div class="stat-card" style="--accent-color: var(--muted)">
+      <div class="stat-label">Scan latency</div>
+      <div class="stat-val" id="sc-latency">—</div>
+      <div class="stat-sub">ms/block</div>
+    </div>
+  </div>
+
+  <div class="two-col">
+    <div class="panel">
+      <div class="panel-head"><div class="panel-dot"></div>Live opportunities</div>
+      <table class="opp-table">
+        <thead>
+          <tr>
+            <th>Pair</th><th>Buy → Sell</th><th>Gap</th><th>Loan</th><th>Net profit</th><th>Status</th>
+          </tr>
+        </thead>
+        <tbody id="opp-tbody"></tbody>
+      </table>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head"><div class="panel-dot"></div>Gap history (last 60 blocks)</div>
+      <div class="panel-body">
+        <div class="chart-wrap" style="height: 200px;">
+          <canvas id="gapChart"></canvas>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="two-col">
+    <div class="panel">
+      <div class="panel-head"><div class="panel-dot"></div>Selected route execution plan</div>
+      <div class="panel-body" id="routePanel">
+        <div style="color: var(--muted); font-size: 12px;">Click a row above to see the flash loan route</div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head"><div class="panel-dot"></div>Scanner log</div>
+      <div class="panel-body" style="padding: 0;">
+        <div class="terminal" id="terminal"></div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- ══════════════════════════════════════════════════════ -->
+<!-- TAB 2: LVR TRACKER -->
+<!-- ══════════════════════════════════════════════════════ -->
+<div class="tab-panel" id="tab-lvr">
+
+  <div class="stat-strip">
+    <div class="stat-card" style="--accent-color: var(--accent)">
+      <div class="stat-label">LP final value</div>
+      <div class="stat-val" id="lv-lp">$0</div>
+      <div class="stat-sub" id="lv-lp-sub">—</div>
+    </div>
+    <div class="stat-card" style="--accent-color: var(--blue)">
+      <div class="stat-label">Hold value</div>
+      <div class="stat-val" id="lv-hodl">$0</div>
+      <div class="stat-sub">same capital</div>
+    </div>
+    <div class="stat-card" style="--accent-color: var(--accent)">
+      <div class="stat-label">Fee income</div>
+      <div class="stat-val" id="lv-fees">$0</div>
+      <div class="stat-sub" id="lv-apr">APR —</div>
+    </div>
+    <div class="stat-card" style="--accent-color: var(--red)">
+      <div class="stat-label">LVR cost</div>
+      <div class="stat-val" id="lv-lvr">$0</div>
+      <div class="stat-sub" id="lv-lvr-sub">—</div>
+    </div>
+    <div class="stat-card" style="--accent-color: var(--amber)">
+      <div class="stat-label">Net alpha</div>
+      <div class="stat-val" id="lv-net">$0</div>
+      <div class="stat-sub" id="lv-verdict">—</div>
+    </div>
+  </div>
+
+  <div class="two-col">
+    <div class="panel">
+      <div class="panel-head"><div class="panel-dot"></div>Position parameters</div>
+      <div class="panel-body">
+        <div class="pool-pills">
+          <button class="pool-pill active" onclick="setLVRPool(this,'ETH/USDC',0.85,5)">ETH/USDC 5bps</button>
+          <button class="pool-pill" onclick="setLVRPool(this,'WBTC/ETH',0.65,30)">WBTC/ETH 30bps</button>
+          <button class="pool-pill" onclick="setLVRPool(this,'MATIC/ETH',1.2,100)">MATIC/ETH 100bps</button>
+        </div>
+        <div class="ctrl-row"><span class="ctrl-label">Capital (USD)</span><input type="range" min="1000" max="100000" step="500" value="10000" id="lv-capital" oninput="updateLVR()"><span class="ctrl-val" id="lv-capital-out">$10,000</span></div>
+        <div class="ctrl-row"><span class="ctrl-label">Range width (±%)</span><input type="range" min="5" max="100" step="5" value="30" id="lv-range" oninput="updateLVR()"><span class="ctrl-val" id="lv-range-out">±30%</span></div>
+        <div class="ctrl-row"><span class="ctrl-label">Days held</span><input type="range" min="7" max="365" step="1" value="90" id="lv-days" oninput="updateLVR()"><span class="ctrl-val" id="lv-days-out">90d</span></div>
+        <div class="ctrl-row"><span class="ctrl-label">Price drift (%)</span><input type="range" min="-80" max="200" step="5" value="40" id="lv-drift" oninput="updateLVR()"><span class="ctrl-val" id="lv-drift-out">+40%</span></div>
+        <div class="ctrl-row"><span class="ctrl-label">Vol/TVL ratio (%)</span><input type="range" min="1" max="50" step="1" value="8" id="lv-vol" oninput="updateLVR()"><span class="ctrl-val" id="lv-vol-out">8%</span></div>
+        <div id="lv-verdict-box" class="verdict green">LP beats buy & hold</div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head"><div class="panel-dot"></div>LP vs hold over time</div>
+      <div class="panel-body">
+        <div class="chart-wrap" style="height: 220px;"><canvas id="lvrChart"></canvas></div>
+        <div style="display:flex; gap:16px; margin-top:12px; font-size:11px;">
+          <span style="display:flex;align-items:center;gap:5px;"><span style="width:12px;height:2px;background:var(--accent);display:inline-block;"></span>LP + fees</span>
+          <span style="display:flex;align-items:center;gap:5px;"><span style="width:12px;height:2px;background:var(--blue);display:inline-block;border-top: 2px dashed var(--blue);"></span>Buy & hold</span>
+          <span style="display:flex;align-items:center;gap:5px;"><span style="width:12px;height:2px;background:var(--red);display:inline-block;"></span>LVR cost</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="three-col">
+    <div class="panel">
+      <div class="panel-head"><div class="panel-dot"></div>Fee vs LVR breakdown</div>
+      <div class="panel-body"><div class="chart-wrap" style="height:160px;"><canvas id="breakdownChart"></canvas></div></div>
+    </div>
+    <div class="panel" style="grid-column: span 2;">
+      <div class="panel-head"><div class="panel-dot"></div>LVR formula reference</div>
+      <div class="panel-body" style="font-size:11px; line-height:1.9; color: var(--text2);">
+        <div style="margin-bottom:8px;"><span style="color:var(--accent)">LVR</span> = ½ · σ² · γ(p) · V · dt</div>
+        <div style="margin-bottom:8px;"><span style="color:var(--blue)">γ(p)</span> = 1 / (2√p · (√Pb − √Pa)) — effective gamma (curvature)</div>
+        <div style="margin-bottom:8px;"><span style="color:var(--red)">IL_v3</span> = 2√(p/p₀)/(1 + p/p₀) − 1 · inRange fraction</div>
+        <div style="margin-bottom:8px;"><span style="color:var(--amber)">Fees</span> = dailyVol × feeBps × (LP_liq/pool_TVL) × inRangeDays</div>
+        <div style="color: var(--muted);">σ = realized annualized vol · Wider range → lower LVR but lower capital efficiency</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════ -->
+<!-- TAB 3: CONTRACT -->
+<!-- ══════════════════════════════════════════════════════ -->
+<div class="tab-panel" id="tab-contract">
+
+  <div class="stat-strip">
+    <div class="stat-card" style="--accent-color: var(--accent)">
+      <div class="stat-label">Contract</div>
+      <div class="stat-val" style="font-size:13px;">FlashLoanArb</div>
+      <div class="stat-sub">v1.0 · Solidity 0.8.20</div>
+    </div>
+    <div class="stat-card" style="--accent-color: var(--blue)">
+      <div class="stat-label">Supported DEXs</div>
+      <div class="stat-val">4</div>
+      <div class="stat-sub">Uni V3, Sushi, Curve, Balancer</div>
+    </div>
+    <div class="stat-card" style="--accent-color: var(--amber)">
+      <div class="stat-label">Flash loan source</div>
+      <div class="stat-val" style="font-size:13px;">Aave V3</div>
+      <div class="stat-sub">0.09% fee</div>
+    </div>
+    <div class="stat-card" style="--accent-color: var(--accent)">
+      <div class="stat-label">Security</div>
+      <div class="stat-val" style="font-size:13px;">3 guards</div>
+      <div class="stat-sub">ReentrancyGuard, Pausable, Ownable</div>
+    </div>
+    <div class="stat-card" style="--accent-color: var(--muted)">
+      <div class="stat-label">Executions</div>
+      <div class="stat-val" id="ct-execs">0</div>
+      <div class="stat-sub">simulated</div>
+    </div>
+  </div>
+
+  <div class="two-col">
+    <div class="panel">
+      <div class="panel-head"><div class="panel-dot"></div>Architecture</div>
+      <div class="panel-body" style="font-size:11px; line-height:1.9; color:var(--text2);">
+        <div class="flow-step"><div class="step-num">1</div><div class="step-txt"><span style="color:var(--accent)">Owner</span> calls <span style="color:var(--amber)">executeArbitrage(asset, amount, params)</span></div></div>
+        <div class="flow-step"><div class="step-num">2</div><div class="step-txt"><span style="color:var(--blue)">Aave V3 Pool</span> sends tokens + calls <span style="color:var(--amber)">executeOperation()</span></div></div>
+        <div class="flow-step"><div class="step-num">3</div><div class="step-txt">Callback loops through <span style="color:var(--accent)">SwapStep[]</span> route → executes each DEX hop</div></div>
+        <div class="flow-step"><div class="step-num">4</div><div class="step-txt">Checks <span style="color:var(--accent)">netProfit ≥ minProfit</span> — reverts entire tx if not</div></div>
+        <div class="flow-step"><div class="step-num">5</div><div class="step-txt">Repays <span style="color:var(--blue)">loan + 0.09% fee</span> → profit stays in contract</div></div>
+        <div class="flow-step"><div class="step-num">6</div><div class="step-txt">Owner calls <span style="color:var(--amber)">withdrawProfit(token)</span></div></div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head"><div class="panel-dot"></div>Profit simulator</div>
+      <div class="panel-body">
+        <div class="ctrl-row"><span class="ctrl-label">Loan size (USD)</span><input type="range" min="10000" max="2000000" step="10000" value="500000" id="ct-loan" oninput="updateContract()"><span class="ctrl-val" id="ct-loan-out">$500k</span></div>
+        <div class="ctrl-row"><span class="ctrl-label">Price gap (%)</span><input type="range" min="0.1" max="5" step="0.1" value="0.75" id="ct-gap" oninput="updateContract()"><span class="ctrl-val" id="ct-gap-out">0.75%</span></div>
+        <div class="ctrl-row"><span class="ctrl-label">Gas (Gwei)</span><input type="range" min="10" max="200" step="5" value="30" id="ct-gas" oninput="updateContract()"><span class="ctrl-val" id="ct-gas-out">30</span></div>
+        <div style="margin-top:16px; display:grid; grid-template-columns:1fr 1fr; gap:10px;">
+          <div style="background:rgba(0,229,160,0.05); border:1px solid rgba(0,229,160,0.2); border-radius:6px; padding:10px;">
+            <div style="font-size:10px;color:var(--muted);margin-bottom:4px;">Gross profit</div>
+            <div style="font-size:18px;color:var(--accent);" id="ct-gross">$3,750</div>
+          </div>
+          <div style="background:rgba(255,77,106,0.05); border:1px solid rgba(255,77,106,0.2); border-radius:6px; padding:10px;">
+            <div style="font-size:10px;color:var(--muted);margin-bottom:4px;">Costs (gas + fee)</div>
+            <div style="font-size:18px;color:var(--red);" id="ct-costs">-$902</div>
+          </div>
+          <div style="background:rgba(0,229,160,0.08); border:1px solid rgba(0,229,160,0.3); border-radius:6px; padding:10px; grid-column:span 2;">
+            <div style="font-size:10px;color:var(--muted);margin-bottom:4px;">Net profit</div>
+            <div style="font-size:24px;color:var(--accent);font-family:var(--display);" id="ct-net">+$2,848</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="panel full-col">
+    <div class="panel-head"><div class="panel-dot"></div>Deployment checklist</div>
+    <div class="panel-body">
+      <div style="display:grid; grid-template-columns: repeat(4, 1fr); gap:12px; font-size:11px;">
+        <div>
+          <div style="color:var(--accent);margin-bottom:6px;">Mainnet addresses</div>
+          <div style="color:var(--text2);line-height:1.9;">
+            Aave V3 Pool<br>0x87870B...fA4E2<br><br>
+            Uni V3 Router02<br>0x68b346...665Fc<br><br>
+            SushiSwap Router<br>0xd9e1cE...c378B
+          </div>
+        </div>
+        <div>
+          <div style="color:var(--accent);margin-bottom:6px;">Pre-deploy steps</div>
+          <div style="color:var(--text2);line-height:1.9;">
+            ✓ Audit with Slither<br>
+            ✓ setTokenApproval()<br>
+            ✓ Test on Tenderly fork<br>
+            ✓ Set minProfit buffer<br>
+            ✓ Verify on Etherscan
+          </div>
+        </div>
+        <div>
+          <div style="color:var(--amber);margin-bottom:6px;">Risks</div>
+          <div style="color:var(--text2);line-height:1.9;">
+            ⚠ MEV front-running<br>
+            ⚠ Price oracle lag<br>
+            ⚠ Gas spike on revert<br>
+            ⚠ Pool manipulation<br>
+            ⚠ Smart contract bugs
+          </div>
+        </div>
+        <div>
+          <div style="color:var(--blue);margin-bottom:6px;">Deploy command</div>
+          <div style="color:var(--text2);line-height:1.9;font-size:10px;word-break:break-all;">
+            forge create --rpc-url $RPC \<br>
+            --constructor-args \<br>
+            $AAVE $UNIV3 \<br>
+            $SUSHI $BALANCER \<br>
+            --private-key $KEY
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+</div>
+</div>
+
+<script>
+// ─── Tab navigation ───
+function showTab(name) {
+  document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
+  document.getElementById('tab-' + name).classList.add('active');
+  event.currentTarget.classList.add('active');
+}
+
+// ─── Block counter ───
+let blockNum = 21847203;
+setInterval(() => {
+  blockNum++;
+  document.getElementById('blockNum').textContent = blockNum.toLocaleString();
+}, 12000);
+
+// ════════════════════════════════════════════
+// ARB SCANNER
+// ════════════════════════════════════════════
+
+const ARB_POOL = [
+  { pair:'WETH/USDC', buy:'Uniswap V3',  sell:'SushiSwap',  buyP:2341.2,  sellP:2358.9,  gap:0.75, loan:500000, gas:180 },
+  { pair:'WBTC/USDC', buy:'SushiSwap',   sell:'Uniswap V3', buyP:61820,   sellP:62140,   gap:0.52, loan:1200000,gas:220 },
+  { pair:'LINK/WETH', buy:'Uniswap V2',  sell:'Balancer V2',buyP:0.00585, sellP:0.00612, gap:2.10, loan:80000,  gas:145 },
+  { pair:'DAI/USDC',  buy:'Curve',       sell:'Uniswap V3', buyP:0.9991,  sellP:1.0008,  gap:0.17, loan:2000000,gas:95  },
+  { pair:'LINK/WETH', buy:'Aave Oracle', sell:'SushiSwap',  buyP:0.00593, sellP:0.00612, gap:2.86, loan:250000, gas:190 },
+];
+
+function netProfit(a) {
+  const gross = a.loan * (a.gap/100);
+  const fee = a.loan * 0.0009;
+  const gasCost = a.gas * 0.001 * 2400;
+  return gross - fee - gasCost;
+}
+
+let scBlocks=0, scGaps=0, scProfit=0, scProfitable=0;
+
+function renderOppTable() {
+  const tbody = document.getElementById('opp-tbody');
+  tbody.innerHTML = '';
+  ARB_POOL.forEach((a,i) => {
+    const np = netProfit(a);
+    const prof = np >= 50;
+    const tr = document.createElement('tr');
+    tr.style.cursor = 'pointer';
+    tr.innerHTML = `
+      <td style="color:var(--text)">${a.pair}</td>
+      <td style="color:var(--text2);font-size:11px;">${a.buy} → ${a.sell}</td>
+      <td><span class="tag tag-blue">${a.gap.toFixed(2)}%</span></td>
+      <td class="muted">$${(a.loan/1000).toFixed(0)}k</td>
+      <td class="${np>=0?'profit-pos':'profit-neg'}">${np>=0?'+':''}$${Math.round(np).toLocaleString()}</td>
+      <td><span class="tag ${prof?'tag-green':'tag-red'}">${prof?'go':'pass'}</span></td>
+    `;
+    tr.onclick = () => showRoute(a, np);
+    tbody.appendChild(tr);
+  });
+}
+
+function showRoute(a, np) {
+  const panel = document.getElementById('routePanel');
+  const steps = [
+    `Borrow $${(a.loan/1000).toFixed(0)}k from Aave V3 (fee: $${(a.loan*0.0009).toFixed(0)})`,
+    `Buy ${a.pair.split('/')[0]} on ${a.buy} @ ${a.buyP < 1 ? a.buyP.toFixed(5) : '$'+a.buyP.toLocaleString()}`,
+    `Sell on ${a.sell} @ ${a.sellP < 1 ? a.sellP.toFixed(5) : '$'+a.sellP.toLocaleString()} (+${a.gap.toFixed(2)}%)`,
+    `Repay Aave loan + 0.09% fee`,
+    `Net profit: ${np>=0?'+':''}$${Math.round(np).toLocaleString()} after ${a.gas} gwei gas`,
+  ];
+  panel.innerHTML = steps.map((s,i) => `<div class="flow-step"><div class="step-num">${i+1}</div><div class="step-txt">${s}</div></div>`).join('');
+  const verdict = document.createElement('div');
+  verdict.className = 'verdict ' + (np >= 50 ? 'green' : 'red');
+  verdict.textContent = np >= 50 ? `▲ EXECUTE — net $${Math.round(np).toLocaleString()} profit` : `▼ SKIP — insufficient margin ($${Math.round(np)} < $50 min)`;
+  panel.appendChild(verdict);
+}
+
+// Gap history chart
+const gapCtx = document.getElementById('gapChart').getContext('2d');
+const gapHistory = Array.from({length:60}, (_,i) => ({x:i, y: Math.random()*2.5}));
+const gapChart = new Chart(gapCtx, {
+  type: 'line',
+  data: {
+    labels: gapHistory.map((_,i)=>i),
+    datasets: [{
+      data: gapHistory.map(h=>h.y),
+      borderColor: '#00e5a0',
+      borderWidth: 1.5,
+      pointRadius: 0,
+      tension: 0.3,
+      fill: true,
+      backgroundColor: 'rgba(0,229,160,0.05)'
+    }]
+  },
+  options: {
+    responsive:true, maintainAspectRatio:false,
+    plugins:{legend:{display:false}},
+    scales:{
+      x:{display:false},
+      y:{ticks:{color:'#4a6070',font:{size:10},callback:v=>v.toFixed(1)+'%'}, grid:{color:'rgba(30,45,61,0.4)'}}
+    }
+  }
+});
+
+// Terminal log
+const logs = [
+  ['log-green', '✓ Scanner init — 4 pairs loaded'],
+  ['log-blue',  '→ block #21847200 | 0 opps'],
+  ['log-amber', '⚠ WBTC/USDC gap 0.52% — below $50 threshold'],
+  ['log-green', '✓ LINK/WETH gap 2.10% → +$1,240 NET PROFITABLE'],
+  ['log-blue',  '→ block #21847201 | 2 opps'],
+  ['log-green', '✓ WETH/USDC gap 0.75% → +$2,848 NET PROFITABLE'],
+];
+const terminal = document.getElementById('terminal');
+let logIdx = 0;
+function addLog() {
+  const now = new Date();
+  const ts = `${now.getHours().toString().padStart(2,'0')}:${now.getMinutes().toString().padStart(2,'0')}:${now.getSeconds().toString().padStart(2,'0')}`;
+  const [cls, msg] = logs[logIdx % logs.length];
+  const div = document.createElement('div');
+  div.className = 'log-line';
+  div.innerHTML = `<span class="log-ts">${ts}</span><span class="${cls}">${msg}</span>`;
+  terminal.appendChild(div);
+  terminal.scrollTop = terminal.scrollHeight;
+  logIdx++;
+  if (terminal.children.length > 50) terminal.removeChild(terminal.firstChild);
+}
+setInterval(addLog, 1800);
+logs.forEach(() => addLog());
+
+// Stats animation
+function tickStats() {
+  scBlocks++;
+  scGaps += Math.floor(Math.random()*3);
+  if (Math.random() > 0.6) { scProfitable++; scProfit += Math.random()*3000; }
+  document.getElementById('sc-blocks').textContent = scBlocks;
+  document.getElementById('sc-gaps').textContent = scGaps;
+  document.getElementById('sc-profitable').textContent = scProfitable;
+  document.getElementById('sc-profit').textContent = '$'+Math.round(scProfit).toLocaleString();
+  document.getElementById('sc-latency').textContent = (80+Math.random()*40).toFixed(0)+'ms';
+
+  // update gap chart
+  gapChart.data.labels.shift(); gapChart.data.labels.push(scBlocks);
+  gapChart.data.datasets[0].data.shift(); gapChart.data.datasets[0].data.push(Math.random()*3);
+  gapChart.update('none');
+}
+setInterval(tickStats, 3000);
+renderOppTable();
+
+// ════════════════════════════════════════════
+// LVR TRACKER
+// ════════════════════════════════════════════
+
+let lvrSigma = 0.85, lvrFeeBps = 5;
+let lvrChart, breakdownChart;
+
+function setLVRPool(el, name, sigma, fee) {
+  document.querySelectorAll('.pool-pill').forEach(p => p.classList.remove('active'));
+  el.classList.add('active');
+  lvrSigma = sigma; lvrFeeBps = fee;
+  updateLVR();
+}
+
+function updateLVR() {
+  const capital = +document.getElementById('lv-capital').value;
+  const rangePct = +document.getElementById('lv-range').value/100;
+  const days = +document.getElementById('lv-days').value;
+  const drift = +document.getElementById('lv-drift').value/100;
+  const volRatio = +document.getElementById('lv-vol').value/100;
+
+  document.getElementById('lv-capital-out').textContent = '$'+capital.toLocaleString();
+  document.getElementById('lv-range-out').textContent = '±'+document.getElementById('lv-range').value+'%';
+  document.getElementById('lv-days-out').textContent = days+'d';
+  document.getElementById('lv-drift-out').textContent = (drift>=0?'+':'')+Math.round(drift*100)+'%';
+  document.getElementById('lv-vol-out').textContent = document.getElementById('lv-vol').value+'%';
+
+  const feeBps = lvrFeeBps/10000;
+  const inRange = Math.min(1, Math.max(0, 1-Math.max(0,(Math.abs(drift)-rangePct)/(1-rangePct+0.001))));
+  const pRel = 1+drift;
+  const il = (2*Math.sqrt(pRel)/(1+pRel)-1)*inRange;
+  const ilDol = il*capital;
+  const dailyVol = capital*volRatio;
+  const fees = dailyVol*feeBps*inRange*days;
+  const gamma = 1/(rangePct*2+0.001);
+  const lvr = 0.5*lvrSigma*lvrSigma*gamma*capital*volRatio*inRange*days;
+  const hodlVal = capital*(1+drift);
+  const lpVal = capital+ilDol+fees;
+  const net = lpVal-hodlVal;
+  const apr = (fees/capital)*(365/days)*100;
+
+  document.getElementById('lv-lp').textContent = '$'+Math.round(lpVal).toLocaleString();
+  document.getElementById('lv-lp-sub').textContent = (((lpVal-capital)/capital)*100).toFixed(1)+'% return';
+  document.getElementById('lv-hodl').textContent = '$'+Math.round(hodlVal).toLocaleString();
+  document.getElementById('lv-fees').textContent = '$'+Math.round(fees).toLocaleString();
+  document.getElementById('lv-apr').textContent = 'APR '+apr.toFixed(1)+'%';
+  document.getElementById('lv-lvr').textContent = '$'+Math.round(lvr).toLocaleString();
+  document.getElementById('lv-lvr-sub').textContent = ((lvr/capital)*(365/days)*100).toFixed(1)+'% ann.';
+  document.getElementById('lv-net').textContent = (net>=0?'+':'')+' $'+Math.round(Math.abs(net)).toLocaleString();
+
+  const vbox = document.getElementById('lv-verdict-box');
+  if (net >= 0) {
+    vbox.className = 'verdict green';
+    vbox.textContent = '▲ LP beats buy & hold by $'+Math.round(net).toLocaleString();
+  } else {
+    vbox.className = 'verdict red';
+    vbox.textContent = '▼ Hold outperforms LP by $'+Math.round(Math.abs(net)).toLocaleString();
+  }
+
+  // Build time series
+  const N = Math.min(days, 60);
+  const labels=[], lpL=[], hodlL=[], lvrL=[];
+  for (let d=0; d<=N; d++) {
+    const t = d/N;
+    labels.push(Math.round(d*(days/N))+'d');
+    const fT = dailyVol*feeBps*inRange*d*(days/N);
+    const ilT = ilDol*t;
+    const lvrT = lvr*t;
+    lpL.push(Math.round(capital+ilT+fT));
+    hodlL.push(Math.round(capital*(1+drift*t)));
+    lvrL.push(Math.round(-lvrT));
+  }
+
+  if (lvrChart) {
+    lvrChart.data.labels = labels;
+    lvrChart.data.datasets[0].data = lpL;
+    lvrChart.data.datasets[1].data = hodlL;
+    lvrChart.data.datasets[2].data = lvrL;
+    lvrChart.update('none');
+  } else {
+    lvrChart = new Chart(document.getElementById('lvrChart').getContext('2d'), {
+      type:'line',
+      data:{labels, datasets:[
+        {label:'LP',    data:lpL,   borderColor:'#00e5a0', borderWidth:2, pointRadius:0, tension:0.3, fill:false},
+        {label:'Hold',  data:hodlL, borderColor:'#4d9fff', borderWidth:1.5, borderDash:[4,4], pointRadius:0, tension:0.3},
+        {label:'LVR',   data:lvrL,  borderColor:'#ff4d6a', borderWidth:1.5, pointRadius:0, tension:0.3},
+      ]},
+      options:{responsive:true,maintainAspectRatio:false,
+        plugins:{legend:{display:false}},
+        scales:{
+          x:{ticks:{color:'#4a6070',font:{size:10},maxTicksLimit:8},grid:{display:false}},
+          y:{ticks:{color:'#4a6070',font:{size:10},callback:v=>'$'+(v/1000).toFixed(0)+'k'},grid:{color:'rgba(30,45,61,0.4)'}}
+        }}
+    });
+  }
+
+  // Breakdown chart
+  const bData = [Math.round(fees), Math.round(Math.abs(ilDol)), Math.round(lvr)];
+  if (breakdownChart) {
+    breakdownChart.data.datasets[0].data = bData;
+    breakdownChart.update('none');
+  } else {
+    breakdownChart = new Chart(document.getElementById('breakdownChart').getContext('2d'), {
+      type:'bar',
+      data:{
+        labels:['Fees earned','IL cost','LVR cost'],
+        datasets:[{data:bData, backgroundColor:['#00e5a0','#ff4d6a','#ff4d6a'], borderRadius:4, borderWidth:0}]
+      },
+      options:{responsive:true,maintainAspectRatio:false,
+        plugins:{legend:{display:false}},
+        scales:{
+          x:{ticks:{color:'#4a6070',font:{size:10}},grid:{display:false}},
+          y:{ticks:{color:'#4a6070',font:{size:10},callback:v=>'$'+(v/1000).toFixed(1)+'k'},grid:{color:'rgba(30,45,61,0.4)'}}
+        }}
+    });
+  }
+}
+
+updateLVR();
+
+// ════════════════════════════════════════════
+// CONTRACT SIMULATOR
+// ════════════════════════════════════════════
+
+let ctExecs = 0;
+function updateContract() {
+  const loan = +document.getElementById('ct-loan').value;
+  const gap = +document.getElementById('ct-gap').value;
+  const gas = +document.getElementById('ct-gas').value;
+
+  document.getElementById('ct-loan-out').textContent = '$'+(loan/1000).toFixed(0)+'k';
+  document.getElementById('ct-gap-out').textContent = gap.toFixed(2)+'%';
+  document.getElementById('ct-gas-out').textContent = gas;
+
+  const gross = loan*(gap/100);
+  const flashFee = loan*0.0009;
+  const gasCost = 350000*gas*1e-9*2400;
+  const costs = flashFee+gasCost;
+  const net = gross-costs;
+
+  document.getElementById('ct-gross').textContent = '$'+Math.round(gross).toLocaleString();
+  document.getElementById('ct-costs').textContent = '-$'+Math.round(costs).toLocaleString();
+  const netEl = document.getElementById('ct-net');
+  netEl.textContent = (net>=0?'+':'')+' $'+Math.round(Math.abs(net)).toLocaleString();
+  netEl.style.color = net>=0 ? 'var(--accent)' : 'var(--red)';
+
+  ctExecs++;
+  document.getElementById('ct-execs').textContent = ctExecs;
+}
+
+updateContract();
+</script>
+</body>
+</html>
